@@ -1,4 +1,67 @@
+import tkinter as tk
+from tkinter import scrolledtext, messagebox, ttk
+import subprocess
+import threading
+import time
+import sys
+import os
 
+class CurlExecutorApp:
+    def __init__(self, root):
+        # 设置中文字体支持
+        self.root = root
+        self.root.title("Curl命令执行器")
+        self.root.geometry("700x600")
+        self.root.resizable(True, True)
+        
+        # 创建主题样式
+        self.style = ttk.Style()
+        self.style.configure("TButton", font=('SimHei', 10))
+        self.style.configure("TLabel", font=('SimHei', 10))
+        
+        # 初始化变量
+        self.is_running = False
+        self.execution_thread = None
+        self.delay = tk.StringVar(value="1")  # 默认延迟1秒
+        
+        # 创建UI
+        self.create_widgets()
+    
+    def create_widgets(self):
+        # 创建命令输入区域
+        command_frame = ttk.LabelFrame(self.root, text="Curl命令")
+        command_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # 添加提示标签，说明支持多行命令
+        hint_label = ttk.Label(command_frame, text="请输入PowerShell格式的curl命令（支持多行命令，使用`作为行连接符）")
+        hint_label.pack(anchor=tk.W, padx=5, pady=(5, 0))
+        
+        self.command_entry = scrolledtext.ScrolledText(command_frame, height=5, wrap=tk.WORD, font=('SimHei', 10))
+        self.command_entry.pack(fill=tk.X, padx=5, pady=5)
+        # 移除示例命令，保持输入区域为空
+        
+        # 创建控制区域
+        control_frame = ttk.LabelFrame(self.root, text="控制选项")
+        control_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # 延迟输入
+        ttk.Label(control_frame, text="执行间隔(秒):").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.delay_entry = ttk.Entry(control_frame, textvariable=self.delay, width=10)
+        self.delay_entry.grid(row=0, column=1, padx=5, pady=5)
+        
+        # 添加PowerShell提示标签
+        powershell_label = ttk.Label(control_frame, text="当前使用PowerShell格式")
+        powershell_label.grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+        
+        # 按钮区域
+        button_frame = ttk.Frame(control_frame)
+        button_frame.grid(row=0, column=2, padx=20, pady=5)
+        
+        self.start_button = ttk.Button(button_frame, text="开始执行", command=self.start_execution)
+        self.start_button.pack(side=tk.LEFT, padx=5)
+        
+        self.stop_button = ttk.Button(button_frame, text="停止执行", command=self.stop_execution, state=tk.DISABLED)
+        self.stop_button.pack(side=tk.LEFT, padx=5)
         
         self.clear_button = ttk.Button(button_frame, text="清空输出", command=self.clear_output)
         self.clear_button.pack(side=tk.LEFT, padx=5)
@@ -37,7 +100,7 @@
         # 创建并启动执行线程
         self.execution_thread = threading.Thread(
             target=self.execute_command_loop, 
-            args=(command, delay_seconds, self.shell_type.get())
+            args=(command, delay_seconds)
         )
         self.execution_thread.daemon = True
         self.execution_thread.start()
@@ -57,69 +120,38 @@
         
         self.append_output(f"[停止执行] {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
     
-    def execute_command_loop(self, command, delay_seconds, shell_type):
+    def execute_command_loop(self, command, delay_seconds):
         while self.is_running:
             start_time = time.time()
             
-            # 执行命令，支持不同的shell类型
+            # 执行PowerShell格式的命令
             try:
-                # 根据shell类型处理命令
-                if shell_type == "cmd":
-                    # 处理cmd格式的多行命令，支持\和^作为行连接符
-                    cmd_lines = command.splitlines()
-                    processed_cmd = ""
-                    for line in cmd_lines:
-                        stripped_line = line.strip()
-                        # 处理Windows cmd中的行连接符：^和\
-                        if stripped_line.endswith('^'):
-                            # 对于以^结尾的行，移除^并保留换行符
-                            processed_cmd += stripped_line[:-1] + '\n'
-                        elif stripped_line.endswith('\\'):
-                            # 保留行尾的\，并添加换行符（cmd中的多行连接符）
-                            processed_cmd += stripped_line + '\n'
-                        else:
-                            # 如果不是行连接符，则直接添加该行
-                            processed_cmd += stripped_line + '\n'
-                    # 移除最后的换行符
-                    if processed_cmd.endswith('\n'):
-                        processed_cmd = processed_cmd[:-1]
-                    
-                    # 使用cmd.exe执行命令
-                    process = subprocess.Popen(
-                        ['cmd.exe', '/c', processed_cmd], 
-                        stdout=subprocess.PIPE, 
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        encoding='utf-8',
-                        errors='replace'
-                    )
-                else:  # PowerShell
-                    # 处理PowerShell格式的命令
-                    # PowerShell使用反引号(`)作为行连接符，但这里我们统一处理所有情况
-                    cmd_lines = command.splitlines()
-                    processed_cmd = ""
-                    for line in cmd_lines:
-                        stripped_line = line.strip()
-                        # PowerShell使用反引号(`)作为行连接符
-                        if stripped_line.endswith('`'):
-                            # 对于以`结尾的行，保留`并添加换行符
-                            processed_cmd += stripped_line + '\n'
-                        else:
-                            # 如果不是行连接符，则直接添加该行
-                            processed_cmd += stripped_line + '\n'
-                    # 移除最后的换行符
-                    if processed_cmd.endswith('\n'):
-                        processed_cmd = processed_cmd[:-1]
-                    
-                    # 使用powershell.exe执行命令
-                    process = subprocess.Popen(
-                        ['powershell.exe', '-Command', processed_cmd], 
-                        stdout=subprocess.PIPE, 
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        encoding='utf-8',
-                        errors='replace'
-                    )
+                # 处理PowerShell格式的命令
+                # PowerShell使用反引号(`)作为行连接符
+                cmd_lines = command.splitlines()
+                processed_cmd = ""
+                for line in cmd_lines:
+                    stripped_line = line.strip()
+                    # 处理PowerShell中的行连接符：`
+                    if stripped_line.endswith('`'):
+                        # 对于以`结尾的行，保留`并添加换行符
+                        processed_cmd += stripped_line + '\n'
+                    else:
+                        # 如果不是行连接符，则直接添加该行
+                        processed_cmd += stripped_line + '\n'
+                # 移除最后的换行符
+                if processed_cmd.endswith('\n'):
+                    processed_cmd = processed_cmd[:-1]
+                
+                # 使用powershell.exe执行命令
+                process = subprocess.Popen(
+                    ['powershell.exe', '-Command', processed_cmd], 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace'
+                )
                 
                 output, _ = process.communicate(timeout=30)  # 30秒超时
                 return_code = process.returncode
