@@ -123,20 +123,24 @@ class CurlExecutorApp:
             
             # 执行cmd格式的命令，支持多行命令
             try:
-                # 将多行命令用&符号连接，使其能在cmd中执行
-                # 替换换行符为 & 符号，同时处理行尾有\的情况
+                # 处理cmd格式的多行命令，支持\和^作为行连接符
                 cmd_lines = command.splitlines()
                 processed_cmd = ""
                 for line in cmd_lines:
                     stripped_line = line.strip()
-                    if stripped_line.endswith('\\'):
+                    # 处理Windows cmd中的行连接符：^和\
+                    if stripped_line.endswith('^'):
+                        # 对于以^结尾的行，移除^并保留换行符
+                        processed_cmd += stripped_line[:-1] + '\n'
+                    elif stripped_line.endswith('\\'):
                         # 保留行尾的\，并添加换行符（cmd中的多行连接符）
                         processed_cmd += stripped_line + '\n'
                     else:
-                        processed_cmd += stripped_line + ' & '
-                # 移除最后一个 & 符号
-                if processed_cmd.endswith(' & '):
-                    processed_cmd = processed_cmd[:-3]
+                        # 如果不是行连接符，则直接添加该行
+                        processed_cmd += stripped_line + '\n'
+                # 移除最后的换行符
+                if processed_cmd.endswith('\n'):
+                    processed_cmd = processed_cmd[:-1]
                 
                 # 使用cmd.exe执行命令，确保支持Windows cmd语法
                 process = subprocess.Popen(
