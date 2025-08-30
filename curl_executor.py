@@ -23,6 +23,7 @@ class CurlExecutorApp:
         self.is_running = False
         self.execution_thread = None
         self.delay = tk.StringVar(value="1")  # 默认延迟1秒
+        self.shell_type = tk.StringVar(value="cmd")  # 默认使用cmd
         
         # 创建UI
         self.create_widgets()
@@ -33,7 +34,7 @@ class CurlExecutorApp:
         command_frame.pack(fill=tk.X, padx=10, pady=10)
         
         # 添加提示标签，说明支持多行命令
-        hint_label = ttk.Label(command_frame, text="请输入cmd格式的curl命令（支持多行命令），例如:")
+        hint_label = ttk.Label(command_frame, text="请输入curl命令（支持多行命令）")
         hint_label.pack(anchor=tk.W, padx=5, pady=(5, 0))
         
         self.command_entry = scrolledtext.ScrolledText(command_frame, height=5, wrap=tk.WORD, font=('SimHei', 10))
@@ -49,6 +50,13 @@ class CurlExecutorApp:
         ttk.Label(control_frame, text="执行间隔(秒):").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
         self.delay_entry = ttk.Entry(control_frame, textvariable=self.delay, width=10)
         self.delay_entry.grid(row=0, column=1, padx=5, pady=5)
+        
+        # Shell类型选择
+        ttk.Label(control_frame, text="命令格式:").grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+        shell_frame = ttk.Frame(control_frame)
+        shell_frame.grid(row=0, column=4, padx=5, pady=5, sticky=tk.W)
+        ttk.Radiobutton(shell_frame, text="CMD", variable=self.shell_type, value="cmd").pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(shell_frame, text="PowerShell", variable=self.shell_type, value="powershell").pack(side=tk.LEFT, padx=5)
         
         # 按钮区域
         button_frame = ttk.Frame(control_frame)
@@ -97,7 +105,7 @@ class CurlExecutorApp:
         # 创建并启动执行线程
         self.execution_thread = threading.Thread(
             target=self.execute_command_loop, 
-            args=(command, delay_seconds)
+            args=(command, delay_seconds, self.shell_type.get())
         )
         self.execution_thread.daemon = True
         self.execution_thread.start()
@@ -117,40 +125,69 @@ class CurlExecutorApp:
         
         self.append_output(f"[停止执行] {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
     
-    def execute_command_loop(self, command, delay_seconds):
+    def execute_command_loop(self, command, delay_seconds, shell_type):
         while self.is_running:
             start_time = time.time()
             
-            # 执行cmd格式的命令，支持多行命令
+            # 执行命令，支持不同的shell类型
             try:
-                # 处理cmd格式的多行命令，支持\和^作为行连接符
-                cmd_lines = command.splitlines()
-                processed_cmd = ""
-                for line in cmd_lines:
-                    stripped_line = line.strip()
-                    # 处理Windows cmd中的行连接符：^和\
-                    if stripped_line.endswith('^'):
-                        # 对于以^结尾的行，移除^并保留换行符
-                        processed_cmd += stripped_line[:-1] + '\n'
-                    elif stripped_line.endswith('\\'):
-                        # 保留行尾的\，并添加换行符（cmd中的多行连接符）
-                        processed_cmd += stripped_line + '\n'
-                    else:
-                        # 如果不是行连接符，则直接添加该行
-                        processed_cmd += stripped_line + '\n'
-                # 移除最后的换行符
-                if processed_cmd.endswith('\n'):
-                    processed_cmd = processed_cmd[:-1]
-                
-                # 使用cmd.exe执行命令，确保支持Windows cmd语法
-                process = subprocess.Popen(
-                    ['cmd.exe', '/c', processed_cmd], 
-                    stdout=subprocess.PIPE, 
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    encoding='utf-8',
-                    errors='replace'
-                )
+                # 根据shell类型处理命令
+                if shell_type == "cmd":
+                    # 处理cmd格式的多行命令，支持\和^作为行连接符
+                    cmd_lines = command.splitlines()
+                    processed_cmd = ""
+                    for line in cmd_lines:
+                        stripped_line = line.strip()
+                        # 处理Windows cmd中的行连接符：^和\
+                        if stripped_line.endswith('^'):
+                            # 对于以^结尾的行，移除^并保留换行符
+                            processed_cmd += stripped_line[:-1] + '\n'
+                        elif stripped_line.endswith('\\'):
+                            # 保留行尾的\，并添加换行符（cmd中的多行连接符）
+                            processed_cmd += stripped_line + '\n'
+                        else:
+                            # 如果不是行连接符，则直接添加该行
+                            processed_cmd += stripped_line + '\n'
+                    # 移除最后的换行符
+                    if processed_cmd.endswith('\n'):
+                        processed_cmd = processed_cmd[:-1]
+                    
+                    # 使用cmd.exe执行命令
+                    process = subprocess.Popen(
+                        ['cmd.exe', '/c', processed_cmd], 
+                        stdout=subprocess.PIPE, 
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        encoding='utf-8',
+                        errors='replace'
+                    )
+                else:  # PowerShell
+                    # 处理PowerShell格式的命令
+                    # PowerShell使用反引号(`)作为行连接符，但这里我们统一处理所有情况
+                    cmd_lines = command.splitlines()
+                    processed_cmd = ""
+                    for line in cmd_lines:
+                        stripped_line = line.strip()
+                        # PowerShell使用反引号(`)作为行连接符
+                        if stripped_line.endswith('`'):
+                            # 对于以`结尾的行，保留`并添加换行符
+                            processed_cmd += stripped_line + '\n'
+                        else:
+                            # 如果不是行连接符，则直接添加该行
+                            processed_cmd += stripped_line + '\n'
+                    # 移除最后的换行符
+                    if processed_cmd.endswith('\n'):
+                        processed_cmd = processed_cmd[:-1]
+                    
+                    # 使用powershell.exe执行命令
+                    process = subprocess.Popen(
+                        ['powershell.exe', '-Command', processed_cmd], 
+                        stdout=subprocess.PIPE, 
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        encoding='utf-8',
+                        errors='replace'
+                    )
                 
                 output, _ = process.communicate(timeout=30)  # 30秒超时
                 return_code = process.returncode
