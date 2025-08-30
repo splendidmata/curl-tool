@@ -10,7 +10,7 @@ class CurlExecutorApp:
     def __init__(self, root):
         # 设置中文字体支持
         self.root = root
-        self.root.title("Bash格式Curl命令执行器")
+        self.root.title("Curl命令执行器")
         self.root.geometry("700x600")
         self.root.resizable(True, True)
         
@@ -24,51 +24,25 @@ class CurlExecutorApp:
         self.execution_thread = None
         self.delay = tk.StringVar(value="1")  # 默认延迟1秒
         
-        # 检测bash是否可用
-        self.bash_available = self.check_bash_available()
-        
         # 创建UI
         self.create_widgets()
     
-    def check_bash_available(self):
-        """检查系统是否安装了bash"""
-        try:
-            subprocess.run("bash --version", shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            try:
-                # 尝试git bash路径
-                git_bash_path = os.path.join(os.environ.get("PROGRAMFILES", "C:\Program Files"), "Git", "bin", "bash.exe")
-                if os.path.exists(git_bash_path):
-                    subprocess.run([git_bash_path, "--version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    return True
-            except:
-                pass
-        return False
-    
     def create_widgets(self):
         # 创建命令输入区域
-        command_frame = ttk.LabelFrame(self.root, text="Bash格式Curl命令")
+        command_frame = ttk.LabelFrame(self.root, text="Curl命令")
         command_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        # 添加提示标签
-        hint_label = ttk.Label(command_frame, text="请输入bash格式的curl命令，例如:")
+        # 添加提示标签，说明支持多行命令
+        hint_label = ttk.Label(command_frame, text="请输入cmd格式的curl命令（支持多行命令），例如:")
         hint_label.pack(anchor=tk.W, padx=5, pady=(5, 0))
         
         self.command_entry = scrolledtext.ScrolledText(command_frame, height=5, wrap=tk.WORD, font=('SimHei', 10))
         self.command_entry.pack(fill=tk.X, padx=5, pady=5)
-        self.command_entry.insert(tk.END, "curl -X GET 'https://api.example.com/data' -H 'Authorization: Bearer token'")  # bash格式示例命令
-        
-        # 如果bash不可用，显示警告
-        if not self.bash_available:
-            warning_frame = ttk.Frame(self.root)
-            warning_frame.pack(fill=tk.X, padx=10, pady=5)
-            warning_label = ttk.Label(
-                warning_frame, 
-                text="警告: 未检测到bash环境! 请安装Git for Windows或WSL以运行bash命令。", 
-                foreground="red"
-            )
-            warning_label.pack(anchor=tk.W, padx=5, pady=5)
+        # 示例改为支持多行的cmd格式curl命令
+        self.command_entry.insert(tk.END, "curl -X POST \
+  https://api.example.com/data \
+  -H \"Content-Type: application/json\" \
+  -d \"{\\\"name\\\": \\"test\\\", \\"value\\\": 123}\\"")
         
         # 创建控制区域
         control_frame = ttk.LabelFrame(self.root, text="控制选项")
@@ -101,16 +75,11 @@ class CurlExecutorApp:
         self.output_text.config(state=tk.DISABLED)
     
     def start_execution(self):
-        # 检查bash是否可用
-        if not self.bash_available:
-            messagebox.showerror("错误", "未检测到bash环境! 请安装Git for Windows或WSL以运行bash命令。")
-            return
-            
         # 获取命令和延迟时间
         command = self.command_entry.get(1.0, tk.END).strip()
         
         if not command:
-            messagebox.showerror("错误", "请输入bash格式的curl命令")
+            messagebox.showerror("错误", "请输入curl命令")
             return
         
         try:
@@ -155,42 +124,37 @@ class CurlExecutorApp:
         while self.is_running:
             start_time = time.time()
             
-            # 执行bash格式的命令
+            # 执行cmd格式的命令，支持多行命令
             try:
-                # 构建通过bash执行的命令
-                # 先尝试直接使用bash命令
-                bash_cmd = f"bash -c \"{command}\""
-                
-                try:
-                    # 尝试直接通过bash执行
-                    process = subprocess.Popen(
-                        bash_cmd, 
-                        shell=True, 
-                        stdout=subprocess.PIPE, 
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        encoding='utf-8',
-                        errors='replace'
-                    )
-                except:
-                    # 尝试使用git bash的完整路径
-                    git_bash_path = os.path.join(os.environ.get("PROGRAMFILES", "C:\Program Files"), "Git", "bin", "bash.exe")
-                    if os.path.exists(git_bash_path):
-                        process = subprocess.Popen(
-                            [git_bash_path, "-c", command], 
-                            stdout=subprocess.PIPE, 
-                            stderr=subprocess.STDOUT,
-                            text=True,
-                            encoding='utf-8',
-                            errors='replace'
-                        )
+                # 将多行命令用&符号连接，使其能在cmd中执行
+                # 替换换行符为 & 符号，同时处理行尾有\的情况
+                cmd_lines = command.splitlines()
+                processed_cmd = ""
+                for line in cmd_lines:
+                    stripped_line = line.strip()
+                    if stripped_line.endswith('\\'):
+                        # 保留行尾的\，并添加换行符（cmd中的多行连接符）
+                        processed_cmd += stripped_line + '\n'
                     else:
-                        raise Exception("未找到bash可执行文件")
+                        processed_cmd += stripped_line + ' & '
+                # 移除最后一个 & 符号
+                if processed_cmd.endswith(' & '):
+                    processed_cmd = processed_cmd[:-3]
+                
+                # 使用cmd.exe执行命令，确保支持Windows cmd语法
+                process = subprocess.Popen(
+                    ['cmd.exe', '/c', processed_cmd], 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace'
+                )
                 
                 output, _ = process.communicate(timeout=30)  # 30秒超时
                 return_code = process.returncode
                 
-                self.append_output(f"[{time.strftime('%H:%M:%S')}] Bash命令执行结果 (返回码: {return_code}):\n{output}\n")
+                self.append_output(f"[{time.strftime('%H:%M:%S')}] 命令执行结果 (返回码: {return_code}):\n{output}\n")
             except subprocess.TimeoutExpired:
                 process.kill()
                 self.append_output(f"[{time.strftime('%H:%M:%S')}] 命令执行超时 (30秒)\n")
