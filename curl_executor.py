@@ -39,10 +39,7 @@ class CurlExecutorApp:
         self.command_entry = scrolledtext.ScrolledText(command_frame, height=5, wrap=tk.WORD, font=('SimHei', 10))
         self.command_entry.pack(fill=tk.X, padx=5, pady=5)
         # 示例改为支持多行的cmd格式curl命令
-        self.command_entry.insert(tk.END, "curl -X POST \
-  https://api.example.com/data \
-  -H \"Content-Type: application/json\" \
-  -d \"{\\\"name\\\": \\"test\\\", \\"value\\\": 123}\\"")
+        # 移除示例命令，保持输入区域为空
         
         # 创建控制区域
         control_frame = ttk.LabelFrame(self.root, text="控制选项")
